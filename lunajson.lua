@@ -1,276 +1,5 @@
 do --{{
-local sources, priorities = {}, {};assert(not sources["lunajson.encoder"],"module already exists")sources["lunajson.encoder"]=([===[-- <pack lunajson.encoder> --
-local error = error
-local byte, find, format, gsub, match = string.byte, string.find, string.format,  string.gsub, string.match
-local concat = table.concat
-local tostring = tostring
-local pairs, type = pairs, type
-local setmetatable = setmetatable
-local huge, tiny = 1/0, -1/0
-
-local f_string_pat
-if _VERSION == "Lua 5.1" then
-	-- use the cluttered pattern because lua 5.1 does not handle \0 in a pattern correctly
-	f_string_pat = '[^ -!#-[%]^-\255]'
-else
-	f_string_pat = '[\0-\31"\\]'
-end
-
-local _ENV = nil
-
-local function newencoder()
-	local v, nullv
-	local i, builder, visited
-
-	local function f_tostring(v)
-		builder[i] = tostring(v)
-		i = i+1
-	end
-
-	local radixmark = match(tostring(0.5), '[^0-9]')
-	local delimmark = match(tostring(12345.12345), '[^0-9' .. radixmark .. ']')
-	if radixmark == '.' then
-		radixmark = nil
-	end
-
-	local radixordelim
-	if radixmark or delimmark then
-		radixordelim = true
-		if radixmark and find(radixmark, '%W') then
-			radixmark = '%' .. radixmark
-		end
-		if delimmark and find(delimmark, '%W') then
-			delimmark = '%' .. delimmark
-		end
-	end
-
-	local f_number = function(n)
-		if tiny < n and n < huge then
-			local s = format("%.17g", n)
-			if radixordelim then
-				if delimmark then
-					s = gsub(s, delimmark, '')
-				end
-				if radixmark then
-					s = gsub(s, radixmark, '.')
-				end
-			end
-			builder[i] = s
-			i = i+1
-			return
-		end
-		error('invalid number')
-	end
-
-	local doencode
-
-	local f_string_subst = {
-		['"'] = '\\"',
-		['\\'] = '\\\\',
-		['\b'] = '\\b',
-		['\f'] = '\\f',
-		['\n'] = '\\n',
-		['\r'] = '\\r',
-		['\t'] = '\\t',
-		__index = function(_, c)
-			return format('\\u00%02X', byte(c))
-		end
-	}
-	setmetatable(f_string_subst, f_string_subst)
-
-	local function f_string(s)
-		builder[i] = '"'
-		if find(s, f_string_pat) then
-			s = gsub(s, f_string_pat, f_string_subst)
-		end
-		builder[i+1] = s
-		builder[i+2] = '"'
-		i = i+3
-	end
-
-	local function f_table(o)
-		if visited[o] then
-			error("loop detected")
-		end
-		visited[o] = true
-
-		local tmp = o[0]
-		if type(tmp) == 'number' then -- arraylen available
-			builder[i] = '['
-			i = i+1
-			for j = 1, tmp do
-				doencode(o[j])
-				builder[i] = ','
-				i = i+1
-			end
-			if tmp > 0 then
-				i = i-1
-			end
-			builder[i] = ']'
-
-		else
-			tmp = o[1]
-			if tmp ~= nil then -- detected as array
-				builder[i] = '['
-				i = i+1
-				local j = 2
-				repeat
-					doencode(tmp)
-					tmp = o[j]
-					if tmp == nil then
-						break
-					end
-					j = j+1
-					builder[i] = ','
-					i = i+1
-				until false
-				builder[i] = ']'
-
-			else -- detected as object
-				builder[i] = '{'
-				i = i+1
-				local tmp = i
-				for k, v in pairs(o) do
-					if type(k) ~= 'string' then
-						error("non-string key")
-					end
-					f_string(k)
-					builder[i] = ':'
-					i = i+1
-					doencode(v)
-					builder[i] = ','
-					i = i+1
-				end
-				if i > tmp then
-					i = i-1
-				end
-				builder[i] = '}'
-			end
-		end
-
-		i = i+1
-		visited[o] = nil
-	end
-
-	local dispatcher = {
-		boolean = f_tostring,
-		number = f_number,
-		string = f_string,
-		table = f_table,
-		__index = function()
-			error("invalid type value")
-		end
-	}
-	setmetatable(dispatcher, dispatcher)
-
-	function doencode(v)
-		if v == nullv then
-			builder[i] = 'null'
-			i = i+1
-			return
-		end
-		return dispatcher[type(v)](v)
-	end
-
-	local function encode(v_, nullv_)
-		v, nullv = v_, nullv_
-		i, builder, visited = 1, {}, {}
-
-		doencode(v)
-		return concat(builder)
-	end
-
-	return encode
-end
-
-return newencoder
-]===]):gsub('\\([%]%[]===)\\([%]%[])','%1%2')
-assert(not sources["lunajson._str_lib_lua53"],"module already exists")sources["lunajson._str_lib_lua53"]=([===[-- <pack lunajson._str_lib_lua53> --
-local inf = math.huge
-local byte, char, sub = string.byte, string.char, string.sub
-local setmetatable = setmetatable
-
-local _ENV = nil
-
-local hextbl = {
-	0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, inf, inf, inf, inf, inf, inf,
-	inf, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, inf, inf, inf, inf, inf, inf, inf, inf, inf,
-	inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf,
-	inf, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, inf, inf, inf, inf, inf, inf, inf, inf, inf,
-}
-hextbl.__index = function()
-	return inf
-end
-setmetatable(hextbl, hextbl)
-
-return function(myerror)
-	local escapetbl = {
-		['"']  = '"',
-		['\\'] = '\\',
-		['/']  = '/',
-		['b']  = '\b',
-		['f']  = '\f',
-		['n']  = '\n',
-		['r']  = '\r',
-		['t']  = '\t'
-	}
-	escapetbl.__index = function()
-		myerror("invalid escape sequence")
-	end
-	setmetatable(escapetbl, escapetbl)
-
-	local surrogateprev = 0
-
-	local function subst(ch, rest)
-		local u8
-		if ch == 'u' then
-			local c1, c2, c3, c4 = byte(rest, 1, 4)
-			-- multiplications should not be lshift since cn may be inf
-			local ucode = hextbl[c1-47] * 0x1000 + hextbl[c2-47] * 0x100 + hextbl[c3-47] * 0x10 + hextbl[c4-47]
-			if ucode == inf then
-				myerror("invalid unicode charcode")
-			end
-			rest = sub(rest, 5)
-			if ucode < 0x80 then -- 1byte
-				u8 = char(ucode)
-			elseif ucode < 0x800 then -- 2byte
-				u8 = char(0xC0 + (ucode >> 6), 0x80 + (ucode & 0x3F))
-			elseif ucode < 0xD800 or 0xE000 <= ucode then -- 3byte
-				u8 = char(0xE0 + (ucode >> 12), 0x80 + (ucode >> 6 & 0x3F), 0x80 + (ucode & 0x3F))
-			elseif 0xD800 <= ucode and ucode < 0xDC00 then -- surrogate pair 1st
-				if surrogateprev == 0 then
-					surrogateprev = ucode
-					if rest == '' then
-						return ''
-					end
-				end
-			else -- surrogate pair 2nd
-				if surrogateprev == 0 then
-					surrogateprev = 1
-				else
-					ucode = 0x10000 + (surrogateprev - 0xD800 << 10) + (ucode - 0xDC00)
-					surrogateprev = 0
-					u8 = char(0xF0 + (ucode >> 18), 0x80 + (ucode >> 12 & 0x3F), 0x80 + (ucode >> 6 & 0x3F), 0x80 + (ucode & 0x3F))
-				end
-			end
-		end
-		if surrogateprev ~= 0 then
-			myerror("invalid surrogate pair")
-		end
-		return (u8 or escapetbl[ch]) .. rest
-	end
-
-	local function surrogateok()
-		return surrogateprev == 0
-	end
-
-	return {
-		subst = subst,
-		surrogateok = surrogateok
-	}
-end
-]===]):gsub('\\([%]%[]===)\\([%]%[])','%1%2')
-assert(not sources["lunajson.sax"],"module already exists")sources["lunajson.sax"]=([===[-- <pack lunajson.sax> --
+local sources, priorities = {}, {};assert(not sources["lunajson.sax"],"module already exists")sources["lunajson.sax"]=([===[-- <pack lunajson.sax> --
 local error = error
 local byte, char, find, gsub, match, sub = string.byte, string.char, string.find, string.gsub, string.match, string.sub
 local tonumber = tonumber
@@ -797,93 +526,191 @@ return {
 	newfileparser = newfileparser
 }
 ]===]):gsub('\\([%]%[]===)\\([%]%[])','%1%2')
-assert(not sources["lunajson._str_lib"],"module already exists")sources["lunajson._str_lib"]=([===[-- <pack lunajson._str_lib> --
-local inf = math.huge
-local byte, char, sub = string.byte, string.char, string.sub
+assert(not sources["lunajson.encoder"],"module already exists")sources["lunajson.encoder"]=([===[-- <pack lunajson.encoder> --
+local error = error
+local byte, find, format, gsub, match = string.byte, string.find, string.format,  string.gsub, string.match
+local concat = table.concat
+local tostring = tostring
+local pairs, type = pairs, type
 local setmetatable = setmetatable
-local floor = math.floor
+local huge, tiny = 1/0, -1/0
+
+local f_string_pat
+if _VERSION == "Lua 5.1" then
+	-- use the cluttered pattern because lua 5.1 does not handle \0 in a pattern correctly
+	f_string_pat = '[^ -!#-[%]^-\255]'
+else
+	f_string_pat = '[\0-\31"\\]'
+end
 
 local _ENV = nil
 
-local hextbl = {
-	0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, inf, inf, inf, inf, inf, inf,
-	inf, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, inf, inf, inf, inf, inf, inf, inf, inf, inf,
-	inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf,
-	inf, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, inf, inf, inf, inf, inf, inf, inf, inf, inf,
-}
-hextbl.__index = function()
-	return inf
-end
-setmetatable(hextbl, hextbl)
+local function newencoder()
+	local v, nullv
+	local i, builder, visited
 
-return function(myerror)
-	local escapetbl = {
-		['"']  = '"',
-		['\\'] = '\\',
-		['/']  = '/',
-		['b']  = '\b',
-		['f']  = '\f',
-		['n']  = '\n',
-		['r']  = '\r',
-		['t']  = '\t'
-	}
-	escapetbl.__index = function()
-		myerror("invalid escape sequence")
+	local function f_tostring(v)
+		builder[i] = tostring(v)
+		i = i+1
 	end
-	setmetatable(escapetbl, escapetbl)
 
-	local surrogateprev = 0
+	local radixmark = match(tostring(0.5), '[^0-9]')
+	local delimmark = match(tostring(12345.12345), '[^0-9' .. radixmark .. ']')
+	if radixmark == '.' then
+		radixmark = nil
+	end
 
-	local function subst(ch, rest)
-		-- 0.000003814697265625 = 2^-18
-		-- 0.000244140625 = 2^-12
-		-- 0.015625 = 2^-6
-		local u8
-		if ch == 'u' then
-			local c1, c2, c3, c4 = byte(rest, 1, 4)
-			local ucode = hextbl[c1-47] * 0x1000 + hextbl[c2-47] * 0x100 + hextbl[c3-47] * 0x10 + hextbl[c4-47]
-			if ucode == inf then
-				myerror("invalid unicode charcode")
+	local radixordelim
+	if radixmark or delimmark then
+		radixordelim = true
+		if radixmark and find(radixmark, '%W') then
+			radixmark = '%' .. radixmark
+		end
+		if delimmark and find(delimmark, '%W') then
+			delimmark = '%' .. delimmark
+		end
+	end
+
+	local f_number = function(n)
+		if tiny < n and n < huge then
+			local s = format("%.17g", n)
+			if radixordelim then
+				if delimmark then
+					s = gsub(s, delimmark, '')
+				end
+				if radixmark then
+					s = gsub(s, radixmark, '.')
+				end
 			end
-			rest = sub(rest, 5)
-			if ucode < 0x80 then -- 1byte
-				u8 = char(ucode)
-			elseif ucode < 0x800 then -- 2byte
-				u8 = char(0xC0 + floor(ucode * 0.015625), 0x80 + ucode % 0x40)
-			elseif ucode < 0xD800 or 0xE000 <= ucode then -- 3byte
-				u8 = char(0xE0 + floor(ucode * 0.000244140625), 0x80 + floor(ucode * 0.015625) % 0x40, 0x80 + ucode % 0x40)
-			elseif 0xD800 <= ucode and ucode < 0xDC00 then -- surrogate pair 1st
-				if surrogateprev == 0 then
-					surrogateprev = ucode
-					if rest == '' then
-						return ''
+			builder[i] = s
+			i = i+1
+			return
+		end
+		error('invalid number')
+	end
+
+	local doencode
+
+	local f_string_subst = {
+		['"'] = '\\"',
+		['\\'] = '\\\\',
+		['\b'] = '\\b',
+		['\f'] = '\\f',
+		['\n'] = '\\n',
+		['\r'] = '\\r',
+		['\t'] = '\\t',
+		__index = function(_, c)
+			return format('\\u00%02X', byte(c))
+		end
+	}
+	setmetatable(f_string_subst, f_string_subst)
+
+	local function f_string(s)
+		builder[i] = '"'
+		if find(s, f_string_pat) then
+			s = gsub(s, f_string_pat, f_string_subst)
+		end
+		builder[i+1] = s
+		builder[i+2] = '"'
+		i = i+3
+	end
+
+	local function f_table(o)
+		if visited[o] then
+			error("loop detected")
+		end
+		visited[o] = true
+
+		local tmp = o[0]
+		if type(tmp) == 'number' then -- arraylen available
+			builder[i] = '['
+			i = i+1
+			for j = 1, tmp do
+				doencode(o[j])
+				builder[i] = ','
+				i = i+1
+			end
+			if tmp > 0 then
+				i = i-1
+			end
+			builder[i] = ']'
+
+		else
+			tmp = o[1]
+			if tmp ~= nil then -- detected as array
+				builder[i] = '['
+				i = i+1
+				local j = 2
+				repeat
+					doencode(tmp)
+					tmp = o[j]
+					if tmp == nil then
+						break
 					end
+					j = j+1
+					builder[i] = ','
+					i = i+1
+				until false
+				builder[i] = ']'
+
+			else -- detected as object
+				builder[i] = '{'
+				i = i+1
+				local tmp = i
+				for k, v in pairs(o) do
+					if type(k) ~= 'string' then
+						error("non-string key")
+					end
+					f_string(k)
+					builder[i] = ':'
+					i = i+1
+					doencode(v)
+					builder[i] = ','
+					i = i+1
 				end
-			else -- surrogate pair 2nd
-				if surrogateprev == 0 then
-					surrogateprev = 1
-				else
-					ucode = 0x10000 + (surrogateprev - 0xD800) * 0x400 + (ucode - 0xDC00)
-					surrogateprev = 0
-					u8 = char(0xF0 + floor(ucode * 0.000003814697265625), 0x80 + floor(ucode * 0.000244140625) % 0x40, 0x80 + floor(ucode * 0.015625) % 0x40, 0x80 + ucode % 0x40)
+				if i > tmp then
+					i = i-1
 				end
+				builder[i] = '}'
 			end
 		end
-		if surrogateprev ~= 0 then
-			myerror("invalid surrogate pair")
+
+		i = i+1
+		visited[o] = nil
+	end
+
+	local dispatcher = {
+		boolean = f_tostring,
+		number = f_number,
+		string = f_string,
+		table = f_table,
+		__index = function()
+			error("invalid type value")
 		end
-		return (u8 or escapetbl[ch]) .. rest
-	end
-
-	local function surrogateok()
-		return surrogateprev == 0
-	end
-
-	return {
-		subst = subst,
-		surrogateok = surrogateok
 	}
+	setmetatable(dispatcher, dispatcher)
+
+	function doencode(v)
+		if v == nullv then
+			builder[i] = 'null'
+			i = i+1
+			return
+		end
+		return dispatcher[type(v)](v)
+	end
+
+	local function encode(v_, nullv_)
+		v, nullv = v_, nullv_
+		i, builder, visited = 1, {}, {}
+
+		doencode(v)
+		return concat(builder)
+	end
+
+	return encode
 end
+
+return newencoder
 ]===]):gsub('\\([%]%[]===)\\([%]%[])','%1%2')
 assert(not sources["lunajson.decoder"],"module already exists")sources["lunajson.decoder"]=([===[-- <pack lunajson.decoder> --
 local error = error
@@ -1251,16 +1078,186 @@ end
 
 return newdecoder
 ]===]):gsub('\\([%]%[]===)\\([%]%[])','%1%2')
-local add
-if not pcall(function() add = require"aioruntime".add end) then
-        local loadstring=_G.loadstring or _G.load; local preload = require"package".preload
-	add = function(name, rawcode)
-		if not preload[name] then
-		        preload[name] = function(...) return assert(loadstring(rawcode), "loadstring: "..name.." failed")(...) end
-		else
-			print("WARNING: overwrite "..name)
+assert(not sources["lunajson._str_lib_lua53"],"module already exists")sources["lunajson._str_lib_lua53"]=([===[-- <pack lunajson._str_lib_lua53> --
+local inf = math.huge
+local byte, char, sub = string.byte, string.char, string.sub
+local setmetatable = setmetatable
+
+local _ENV = nil
+
+local hextbl = {
+	0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, inf, inf, inf, inf, inf, inf,
+	inf, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, inf, inf, inf, inf, inf, inf, inf, inf, inf,
+	inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf,
+	inf, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, inf, inf, inf, inf, inf, inf, inf, inf, inf,
+}
+hextbl.__index = function()
+	return inf
+end
+setmetatable(hextbl, hextbl)
+
+return function(myerror)
+	local escapetbl = {
+		['"']  = '"',
+		['\\'] = '\\',
+		['/']  = '/',
+		['b']  = '\b',
+		['f']  = '\f',
+		['n']  = '\n',
+		['r']  = '\r',
+		['t']  = '\t'
+	}
+	escapetbl.__index = function()
+		myerror("invalid escape sequence")
+	end
+	setmetatable(escapetbl, escapetbl)
+
+	local surrogateprev = 0
+
+	local function subst(ch, rest)
+		local u8
+		if ch == 'u' then
+			local c1, c2, c3, c4 = byte(rest, 1, 4)
+			-- multiplications should not be lshift since cn may be inf
+			local ucode = hextbl[c1-47] * 0x1000 + hextbl[c2-47] * 0x100 + hextbl[c3-47] * 0x10 + hextbl[c4-47]
+			if ucode == inf then
+				myerror("invalid unicode charcode")
+			end
+			rest = sub(rest, 5)
+			if ucode < 0x80 then -- 1byte
+				u8 = char(ucode)
+			elseif ucode < 0x800 then -- 2byte
+				u8 = char(0xC0 + (ucode >> 6), 0x80 + (ucode & 0x3F))
+			elseif ucode < 0xD800 or 0xE000 <= ucode then -- 3byte
+				u8 = char(0xE0 + (ucode >> 12), 0x80 + (ucode >> 6 & 0x3F), 0x80 + (ucode & 0x3F))
+			elseif 0xD800 <= ucode and ucode < 0xDC00 then -- surrogate pair 1st
+				if surrogateprev == 0 then
+					surrogateprev = ucode
+					if rest == '' then
+						return ''
+					end
+				end
+			else -- surrogate pair 2nd
+				if surrogateprev == 0 then
+					surrogateprev = 1
+				else
+					ucode = 0x10000 + (surrogateprev - 0xD800 << 10) + (ucode - 0xDC00)
+					surrogateprev = 0
+					u8 = char(0xF0 + (ucode >> 18), 0x80 + (ucode >> 12 & 0x3F), 0x80 + (ucode >> 6 & 0x3F), 0x80 + (ucode & 0x3F))
+				end
+			end
 		end
-        end
+		if surrogateprev ~= 0 then
+			myerror("invalid surrogate pair")
+		end
+		return (u8 or escapetbl[ch]) .. rest
+	end
+
+	local function surrogateok()
+		return surrogateprev == 0
+	end
+
+	return {
+		subst = subst,
+		surrogateok = surrogateok
+	}
+end
+]===]):gsub('\\([%]%[]===)\\([%]%[])','%1%2')
+assert(not sources["lunajson._str_lib"],"module already exists")sources["lunajson._str_lib"]=([===[-- <pack lunajson._str_lib> --
+local inf = math.huge
+local byte, char, sub = string.byte, string.char, string.sub
+local setmetatable = setmetatable
+local floor = math.floor
+
+local _ENV = nil
+
+local hextbl = {
+	0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, inf, inf, inf, inf, inf, inf,
+	inf, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, inf, inf, inf, inf, inf, inf, inf, inf, inf,
+	inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf,
+	inf, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, inf, inf, inf, inf, inf, inf, inf, inf, inf,
+}
+hextbl.__index = function()
+	return inf
+end
+setmetatable(hextbl, hextbl)
+
+return function(myerror)
+	local escapetbl = {
+		['"']  = '"',
+		['\\'] = '\\',
+		['/']  = '/',
+		['b']  = '\b',
+		['f']  = '\f',
+		['n']  = '\n',
+		['r']  = '\r',
+		['t']  = '\t'
+	}
+	escapetbl.__index = function()
+		myerror("invalid escape sequence")
+	end
+	setmetatable(escapetbl, escapetbl)
+
+	local surrogateprev = 0
+
+	local function subst(ch, rest)
+		-- 0.000003814697265625 = 2^-18
+		-- 0.000244140625 = 2^-12
+		-- 0.015625 = 2^-6
+		local u8
+		if ch == 'u' then
+			local c1, c2, c3, c4 = byte(rest, 1, 4)
+			local ucode = hextbl[c1-47] * 0x1000 + hextbl[c2-47] * 0x100 + hextbl[c3-47] * 0x10 + hextbl[c4-47]
+			if ucode == inf then
+				myerror("invalid unicode charcode")
+			end
+			rest = sub(rest, 5)
+			if ucode < 0x80 then -- 1byte
+				u8 = char(ucode)
+			elseif ucode < 0x800 then -- 2byte
+				u8 = char(0xC0 + floor(ucode * 0.015625), 0x80 + ucode % 0x40)
+			elseif ucode < 0xD800 or 0xE000 <= ucode then -- 3byte
+				u8 = char(0xE0 + floor(ucode * 0.000244140625), 0x80 + floor(ucode * 0.015625) % 0x40, 0x80 + ucode % 0x40)
+			elseif 0xD800 <= ucode and ucode < 0xDC00 then -- surrogate pair 1st
+				if surrogateprev == 0 then
+					surrogateprev = ucode
+					if rest == '' then
+						return ''
+					end
+				end
+			else -- surrogate pair 2nd
+				if surrogateprev == 0 then
+					surrogateprev = 1
+				else
+					ucode = 0x10000 + (surrogateprev - 0xD800) * 0x400 + (ucode - 0xDC00)
+					surrogateprev = 0
+					u8 = char(0xF0 + floor(ucode * 0.000003814697265625), 0x80 + floor(ucode * 0.000244140625) % 0x40, 0x80 + floor(ucode * 0.015625) % 0x40, 0x80 + ucode % 0x40)
+				end
+			end
+		end
+		if surrogateprev ~= 0 then
+			myerror("invalid surrogate pair")
+		end
+		return (u8 or escapetbl[ch]) .. rest
+	end
+
+	local function surrogateok()
+		return surrogateprev == 0
+	end
+
+	return {
+		subst = subst,
+		surrogateok = surrogateok
+	}
+end
+]===]):gsub('\\([%]%[]===)\\([%]%[])','%1%2')
+local loadstring=_G.loadstring or _G.load; local preload = require"package".preload
+local add = function(name, rawcode)
+	if not preload[name] then
+	        preload[name] = function(...) return assert(loadstring(rawcode), "loadstring: "..name.." failed")(...) end
+	else
+		print("WARNING: overwrite "..name)
+	end
 end
 for name, rawcode in pairs(sources) do add(name, rawcode, priorities[name]) end
 end; --}};
