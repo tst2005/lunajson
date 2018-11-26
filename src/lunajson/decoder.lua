@@ -23,7 +23,7 @@ local _ENV = nil
 
 
 local function newdecoder()
-	local json, pos, nullv, arraylen, rec_depth
+	local json, pos, nullv, arraylen, rec_depth, remind_order
 
 	-- `f` is the temporary for dispatcher[c] and
 	-- the dummy for the first return value of `find`
@@ -404,9 +404,14 @@ local function newdecoder()
 			decode_error('too deeply nested json (> 1000)')
 		end
 		local obj = {}
+		if remind_order then
+			obj[0] = false -- distinguish empty arrays from objects
+		end
 
 		f, pos = find(json, '^[ \n\r\t]*', pos)
 		pos = pos+1
+
+		local i = 0
 		if byte(json, pos) ~= 0x7D then  -- check closing bracket '}' which means the object empty
 			local newpos = pos-1
 
@@ -441,7 +446,12 @@ local function newdecoder()
 					f = dispatcher[byte(json, newpos+1)]
 				end
 				pos = newpos+2
-				obj[key] = f()  -- parse value
+				if remind_order then
+					i = i+2
+					obj[i-1], obj[i] = key, f() -- parse value
+				else
+					obj[key] = f()  -- parse value
+				end
 				f, newpos = find(json, '^[ \n\r\t]*,[ \n\r\t]*', pos)
 			until not newpos
 
@@ -450,6 +460,14 @@ local function newdecoder()
 				decode_error("no closing bracket of an object")
 			end
 			pos = newpos
+		end
+
+		if remind_order then
+			-- Second pass for kv mapping is empirically faster than doing it
+			-- alongside the pair assignments in the inner loop
+			for j=1,i,2 do
+				obj[obj[j]] = obj[j+1]
+			end
 		end
 
 		pos = pos+1
@@ -489,8 +507,8 @@ local function newdecoder()
 	--[[
 		run decoder
 	--]]
-	local function decode(json_, pos_, nullv_, arraylen_)
-		json, pos, nullv, arraylen = json_, pos_, nullv_, arraylen_
+	local function decode(json_, pos_, nullv_, arraylen_, remind_order_)
+		json, pos, nullv, arraylen = json_, pos_, nullv_, arraylen_, remind_order_
 		rec_depth = 0
 
 		pos = pos or 1
