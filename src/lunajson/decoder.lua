@@ -508,7 +508,7 @@ local function newdecoder()
 		run decoder
 	--]]
 	local function decode(json_, pos_, nullv_, arraylen_, remind_order_)
-		json, pos, nullv, arraylen = json_, pos_, nullv_, arraylen_, remind_order_
+		json, pos, nullv, arraylen, remind_order = json_, pos_, nullv_, arraylen_, remind_order_
 		rec_depth = 0
 
 		pos = pos or 1
