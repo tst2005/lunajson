@@ -468,6 +468,17 @@ local function newdecoder()
 			for j=1,i,2 do
 				obj[obj[j]] = obj[j+1]
 			end
+
+			local function kvpairs(t)
+				local i = -1
+				return function ()
+					i = i+2
+					if t[i] then
+						return t[i], t[i+1]
+					end
+				end
+			end
+			setmetatable(obj, {__pairs=kvpairs})
 		end
 
 		pos = pos+1

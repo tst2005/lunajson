@@ -2,7 +2,7 @@ local error = error
 local byte, find, format, gsub, match = string.byte, string.find, string.format,  string.gsub, string.match
 local concat = table.concat
 local tostring = tostring
-local pairs, type = pairs, type
+local pairs, type = require "lunajson.pairs", type
 local setmetatable = setmetatable
 local huge, tiny = 1/0, -1/0
 
